@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# data
+data/
+
+# shiny rs-connect
+rsconnect-python/
+
 # Distribution / packaging
 .Python
 build/
