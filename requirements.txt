@@ -1,3 +1,4 @@
+astropy==5.3.3
 git+https://github.com/philbl/satellite-image-handler.git@main
 matplotlib==3.7.1
 numpy==1.26.0
