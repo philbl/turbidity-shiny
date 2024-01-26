@@ -43,7 +43,7 @@ def server_turbidity(input, output, session: Session):
     def get_number_of_turbidity_image():
         return len(get_turbidity_data()[0])
 
-    @reactive.Calc()
+    @reactive.Calc
     def generate_turbidity_df():
         (
             image_handler_list,
@@ -62,12 +62,21 @@ def server_turbidity(input, output, session: Session):
             box_size,
             ndti_smoothed_sigma,
             input.type_of_turbidity_index(),
+            input.turbidity_exclude_bridge_points_switch(),
+            input.turbidity_exclude_outlier(),
+            input.turbidity_use_log_measure(),
         )
         turbidity_data_subset = input.turbidity_data_subset()
         if turbidity_data_subset == "Centre Seulement":
             turbidity_df = turbidity_df[
                 turbidity_df["location"].apply(
                     lambda location: "bottom" in location or "surface" in location
+                )
+            ]
+        elif turbidity_data_subset == "Sans les bottoms":
+            turbidity_df = turbidity_df[
+                turbidity_df["location"].apply(
+                    lambda location: "bottom" not in location
                 )
             ]
         elif turbidity_data_subset == "South (ou West) Seulement":
@@ -297,6 +306,10 @@ def server_turbidity(input, output, session: Session):
                 create_ndwi_raster(image_handler.green_band, image_handler.nir_band)
                 > input.ndwi_mask_threshold()
             )
+            if input.turbidity_exclude_bridge_points_switch():
+                ndwi_mask = (
+                    ndwi_mask * image_handler.get_mask_from_bridge_points_handler()
+                )
             alpha = ndwi_mask.astype(float)
             if visualisation_mode == "Index Turbidité":
                 smoothed_ndti_ndwi_mask = get_smoothed_turbidity_index_ndwi_mask(
@@ -304,11 +317,12 @@ def server_turbidity(input, output, session: Session):
                     input.ndwi_mask_threshold(),
                     input.ndti_smoothed_sigma(),
                     input.type_of_turbidity_index(),
+                    input.turbidity_exclude_bridge_points_switch(),
                 )
                 if input.type_of_turbidity_index() == "NDTI":
                     vmin, vmax = -0.05, 0.05
                 else:
-                    vmin, vmax = 1_000, 2_000
+                    vmin, vmax = 1_000, 1_700
             visualisation = (
                 smoothed_ndti_ndwi_mask
                 if visualisation_mode == "Index Turbidité"
@@ -370,6 +384,7 @@ def server_turbidity(input, output, session: Session):
         fig, ax = plt.subplots(1, 1, frameon=False)
         color_mapping_estuaries = {
             "bouctouche": {
+                "2023-05-11": "red",
                 "2023-07-20": "blue",
                 "2023-07-25": "orange",
                 "2023-08-04": "green",
@@ -412,7 +427,12 @@ def server_turbidity(input, output, session: Session):
                     marker="x",
                 )
             ax.set_xlabel(input.type_of_turbidity_index())
-            ax.set_ylabel("Turbidité (FNU)")
+            ylabel = (
+                "Turbidité (FNU)"
+                if input.turbidity_use_log_measure() is False
+                else "Log(Turbidité (FNU))"
+            )
+            ax.set_ylabel(ylabel)
             ax.set_title(
                 f"Mesure de la turbidity In Situ en fonction d'un indice de {input.type_of_turbidity_index()}"
             )
