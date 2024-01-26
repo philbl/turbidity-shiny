@@ -11,8 +11,24 @@ ui_turbidity = ui.page_fluid(
             ),
             ui.input_select(
                 "modified_turbidity_location_switch",
-                "Utilisé les locations manuellement Modifiée",
+                "Utiliser les locations manuellement Modifiée",
                 ["Original", "Modifiée manuellement"],
+                selected="Modifiée manuellement",
+            ),
+            ui.input_switch(
+                "turbidity_exclude_bridge_points_switch",
+                "Exclure les points identifiés manuellement comme un pont",
+                True,
+            ),
+            ui.input_switch(
+                "turbidity_exclude_outlier",
+                "Exclure les points abérants (>70 FNU)",
+                True,
+            ),
+            ui.input_switch(
+                "turbidity_use_log_measure",
+                "Utiliser le log des mesures de turbidité",
+                False,
             ),
             ui.div(
                 {"id": "turbidity-precise-location"},
@@ -26,7 +42,7 @@ ui_turbidity = ui.page_fluid(
                 "type_of_turbidity_index",
                 "Index de Turbidité Satellitaire",
                 ["NDTI", "Bande Rouge (665nm)", "Bande Infra Rouge (833nm)"],
-                selected="NDTI",
+                selected="Bande Infra Rouge (833nm)",
             ),
             ui.div(
                 {"id": "turbidity-visualisation"},
@@ -34,7 +50,7 @@ ui_turbidity = ui.page_fluid(
                     "turbidity_visualisation",
                     "Visualisation",
                     ["Image couleur", "NDWI", "NDWI_mask", "Index Turbidité"],
-                    selected="Image couleur",
+                    selected="Index Turbidité",
                 ),
             ),
             ui.input_select(
@@ -46,7 +62,7 @@ ui_turbidity = ui.page_fluid(
             ui.input_numeric(
                 "ndwi_mask_threshold",
                 "NDWI Masque Threshold",
-                value=-0.03,
+                value=-0.05,
                 min=-0.1,
                 max=0.1,
                 step=0.01,
@@ -54,7 +70,7 @@ ui_turbidity = ui.page_fluid(
             ui.input_numeric(
                 "ndti_smoothed_sigma",
                 "NDTI Filtre Gaussien Sigma",
-                value=0,
+                value=1,
                 min=0,
                 max=10,
                 step=1,
@@ -64,11 +80,13 @@ ui_turbidity = ui.page_fluid(
                 "Sous Ensemble de prise de mesure",
                 [
                     "Tous",
+                    "Sans les bottoms",
                     "Centre Seulement",
                     "South (ou West) Seulement",
                     "North (ou East) Seulement",
                     "Shore Seulement",
                 ],
+                selected="Sans les bottoms",
             ),
             ui.input_action_button("turbidity_previous_button", "Image Précédente"),
             ui.input_action_button("turbidity_next_button", "Image Suivante"),
