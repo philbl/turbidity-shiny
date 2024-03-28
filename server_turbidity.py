@@ -99,16 +99,6 @@ def server_turbidity(input, output, session: Session):
             ]
         return turbidity_df
 
-    # @reactive.Effect
-    # def update_water_mask_threshold():
-    #     atmospheric_correction = input.turbidity_atmoshperic_correction()
-    #     value = None
-    #     if atmospheric_correction == "Sen2Cor":
-    #         value = -0.05
-    #     elif atmospheric_correction == "Acolite":
-    #         value = -0.05
-    #     ui.update_numeric("water_index_mask_threshold", value=value)
-
     @reactive.Effect
     def update_locations_list():
         locations_list = get_all_specific_locations()
