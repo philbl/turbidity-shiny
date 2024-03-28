@@ -1,10 +1,11 @@
+from datetime import datetime, timedelta
 import numpy
 import pandas
 from astropy.convolution import Gaussian2DKernel
 from astropy.convolution import convolve
+from outliers import smirnov_grubbs as grubbs
 
-
-from satellite_image_handler.utils.normalize_index import create_ndwi_raster
+from satellite_image_handler.utils.normalize_index import create_water_index_raster
 
 from turbidity_shiny.turbidity_index import create_turbidity_index_raster
 
@@ -20,7 +21,7 @@ def create_turbidity_df(
     image_handler_list,
     turbidity_measures_data,
     turbidity_location_data,
-    ndwi_threshold,
+    water_index_threshold,
     box_size,
     ndti_smoothed_sigma,
     type_of_turbidity_index,
@@ -56,15 +57,17 @@ def create_turbidity_df(
                     geo_coordinates["lon"], geo_coordinates["lat"]
                 )
             ).astype(int)
-            smoothed_turbidity_index_ndwi_mask = get_smoothed_turbidity_index_ndwi_mask(
-                image_handler,
-                ndwi_threshold,
-                ndti_smoothed_sigma,
-                type_of_turbidity_index,
-                exclude_points_from_bridge_points_handler,
+            smoothed_turbidity_index_water_index_mask = (
+                get_smoothed_turbidity_index_water_index_mask(
+                    image_handler,
+                    water_index_threshold,
+                    ndti_smoothed_sigma,
+                    type_of_turbidity_index,
+                    exclude_points_from_bridge_points_handler,
+                )
             )
             box_size_offset = box_size // 2
-            box = smoothed_turbidity_index_ndwi_mask[
+            box = smoothed_turbidity_index_water_index_mask[
                 row - box_size_offset : row + box_size_offset + 1,
                 col - box_size_offset : col + box_size_offset + 1,
             ]
@@ -90,9 +93,9 @@ def create_turbidity_df(
     return turbidity_df
 
 
-def get_smoothed_turbidity_index_ndwi_mask(
+def get_smoothed_turbidity_index_water_index_mask(
     image_handler,
-    ndwi_threshold,
+    water_index_threshold,
     ndti_smoothed_sigma,
     type_of_turbidity_index,
     exclude_points_from_bridge_points_handler,
@@ -102,13 +105,16 @@ def get_smoothed_turbidity_index_ndwi_mask(
         image_handler.green_band,
         image_handler.nir_band,
         type_of_turbidity_index,
+        image_handler,
     )
-    ndwi = create_ndwi_raster(image_handler.green_band, image_handler.nir_band)
-    ndwi_mask = ndwi > ndwi_threshold
+    water_index = create_water_index_raster(image_handler)
+    water_index_mask = water_index > water_index_threshold
     if exclude_points_from_bridge_points_handler is True:
-        ndwi_mask = ndwi_mask * image_handler.get_mask_from_bridge_points_handler()
-    turbidity_index_water_mask = ndwi_mask * turbidity_index
-    turbidity_index_water_mask[ndwi_mask == 0.0] = numpy.nan
+        water_index_mask = (
+            water_index_mask * image_handler.get_mask_from_bridge_points_handler()
+        )
+    turbidity_index_water_mask = water_index_mask * turbidity_index
+    turbidity_index_water_mask[water_index_mask == 0.0] = numpy.nan
     if ndti_smoothed_sigma == 0:
         return turbidity_index_water_mask
     else:
@@ -119,5 +125,86 @@ def get_smoothed_turbidity_index_ndwi_mask(
             y_size=7,
         )
         convole_ndti_water_mask = convolve(turbidity_index_water_mask, gaussian_kernel)
-        convole_ndti_water_mask[ndwi_mask == 0.0] = numpy.nan
+        convole_ndti_water_mask[water_index_mask == 0.0] = numpy.nan
         return convole_ndti_water_mask
+
+
+def get_turbidity_from_image_handle_class_and_turbidity_df(
+    image_handle_class, turbidity_df, window=0
+):
+    image_date = datetime.strptime(image_handle_class.date[:19], "%Y-%m-%dT%H:%M:%S")
+    image_date = image_date - timedelta(hours=4)
+    argmin_idx_location = (turbidity_df["date"] - image_date).abs().argmin()
+    turbidity = turbidity_df.loc[
+        argmin_idx_location - window : argmin_idx_location + window
+    ]["filtered_interpolated_turbidity"].mean()
+    time_diff = turbidity_df.loc[argmin_idx_location]["date"] - image_date
+    return turbidity, time_diff
+
+
+def create_turbidity_fixed_df(
+    image_handler_list,
+    fixed_turbidity_data,
+    turbidity_geo_coordinate_dict,
+    water_index_threshold,
+    box_size,
+    ndti_smoothed_sigma,
+    type_of_turbidity_index,
+    exclude_points_from_bridge_points_handler,
+    exlude_outlier=False,
+    use_log_measure=False,
+    turdibidty_df_window=0,
+):
+    turbidity_df = pandas.DataFrame(
+        columns=[
+            "date",
+            "measure",
+            "turbidity_index_value",
+        ]
+    )
+    for i, image_handler in enumerate(image_handler_list):
+        turbidity, time_diff = get_turbidity_from_image_handle_class_and_turbidity_df(
+            image_handler, fixed_turbidity_data, turdibidty_df_window
+        )
+        image_date = datetime.strptime(image_handler.date[:19], "%Y-%m-%dT%H:%M:%S")
+        if numpy.abs(time_diff).days == 0 and image_date < datetime(2023, 11, 19):
+            smoothed_turbidity_index_water_index_mask = (
+                get_smoothed_turbidity_index_water_index_mask(
+                    image_handler,
+                    water_index_threshold,
+                    ndti_smoothed_sigma,
+                    type_of_turbidity_index,
+                    exclude_points_from_bridge_points_handler,
+                )
+            )
+            turbidity_geo_coordinate = turbidity_geo_coordinate_dict[
+                image_handler.date[:4]
+            ]
+            row, col = numpy.round(
+                image_handler.get_row_col_index_from_longitide_latitude(
+                    turbidity_geo_coordinate["lon"], turbidity_geo_coordinate["lat"]
+                )
+            ).astype(int)
+            box_size_offset = box_size // 2
+            box = smoothed_turbidity_index_water_index_mask[
+                row - box_size_offset : row + box_size_offset + 1,
+                col - box_size_offset : col + box_size_offset + 1,
+            ]
+            turbidity_index_value = numpy.nanmean(box)
+
+            turbidity_df.loc[i, "date"] = image_handler.date[:10]
+            turbidity_df.loc[i, "measure"] = turbidity
+            turbidity_df.loc[i, "turbidity_index_value"] = turbidity_index_value
+    turbidity_df["measure"] = turbidity_df["measure"].astype(float)
+    turbidity_df = turbidity_df[~turbidity_df["measure"].isna()].reset_index(drop=True)
+    turbidity_df["turbidity_index_value"] = turbidity_df[
+        "turbidity_index_value"
+    ].astype(float)
+    if exlude_outlier:
+        non_outlier_index = ~numpy.isin(
+            turbidity_df["measure"],
+            grubbs.max_test_outliers(turbidity_df["measure"].values, alpha=0.05),
+        )
+        turbidity_df = turbidity_df[non_outlier_index].reset_index(drop=True)
+
+    return turbidity_df

@@ -9,16 +9,21 @@ ui_satellite_situ = ui.page_fluid(
                 "Estuaire",
                 ["Bouctouche", "Cocagne", "Dunk", "Morell", "West"],
             ),
+            ui.input_select(
+                "satellite_situ_atmospheric_correctin",
+                "Correction Atmosphérique",
+                ["Toutes", "Sen2Cor", "Acolite"],
+            ),
             ui.input_switch(
                 "satellite_situ_all_obs_switch",
                 "Toutes les Observations doivent être utilisées",
                 False,
             ),
-            ui.input_switch(
-                "satellite_situ_exclude_points_from_bridge_switch",
-                "Exclure les points identifiés manuellement comme un pont",
-                False,
-            ),
+            # ui.input_switch(
+            #     "satellite_situ_exclude_points_from_bridge_switch",
+            #     "Exclure les points identifiés manuellement comme un pont",
+            #     False,
+            # ),
             class_="mb-3",
         ),
         ui.panel_main(

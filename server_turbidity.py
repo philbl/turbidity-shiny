@@ -4,7 +4,7 @@ import numpy
 from shiny import ui, render, reactive, Session
 from shiny.types import SilentException
 
-from satellite_image_handler.utils.normalize_index import create_ndwi_raster
+from satellite_image_handler.utils.normalize_index import create_water_index_raster
 from shiny.plotutils import near_points
 
 
@@ -14,7 +14,7 @@ from turbidity_shiny.utils import (
 )
 from turbidity_shiny.turbidity.turbidity_df import (
     create_turbidity_df,
-    get_smoothed_turbidity_index_ndwi_mask,
+    get_smoothed_turbidity_index_water_index_mask,
 )
 from turbidity_shiny.turbidity.load_data import load_turbidity_data
 
@@ -27,7 +27,9 @@ def server_turbidity(input, output, session: Session):
             turbidity_measures_data,
             turbidity_location_data,
         ) = load_turbidity_data(
-            input.turbidity_estuary_name(), input.modified_turbidity_location_switch()
+            input.turbidity_estuary_name(),
+            input.modified_turbidity_location_switch(),
+            input.turbidity_atmoshperic_correction(),
         )
         return image_handler_list, turbidity_measures_data, turbidity_location_data
 
@@ -52,17 +54,17 @@ def server_turbidity(input, output, session: Session):
         ) = get_turbidity_data()
         box_size_string = input.turbidity_selection_box_size()
         box_size = int(box_size_string[0])
-        ndwi_mask_threshold = input.ndwi_mask_threshold()
+        water_index_mask_threshold = input.water_index_mask_threshold()
         ndti_smoothed_sigma = input.ndti_smoothed_sigma()
         turbidity_df = create_turbidity_df(
             image_handler_list,
             turbidity_measures_data,
             turbidity_location_data,
-            ndwi_mask_threshold,
+            water_index_mask_threshold,
             box_size,
             ndti_smoothed_sigma,
             input.type_of_turbidity_index(),
-            input.turbidity_exclude_bridge_points_switch(),
+            True,
             input.turbidity_exclude_outlier(),
             input.turbidity_use_log_measure(),
         )
@@ -97,6 +99,16 @@ def server_turbidity(input, output, session: Session):
             ]
         return turbidity_df
 
+    # @reactive.Effect
+    # def update_water_mask_threshold():
+    #     atmospheric_correction = input.turbidity_atmoshperic_correction()
+    #     value = None
+    #     if atmospheric_correction == "Sen2Cor":
+    #         value = -0.05
+    #     elif atmospheric_correction == "Acolite":
+    #         value = -0.05
+    #     ui.update_numeric("water_index_mask_threshold", value=value)
+
     @reactive.Effect
     def update_locations_list():
         locations_list = get_all_specific_locations()
@@ -105,6 +117,7 @@ def server_turbidity(input, output, session: Session):
         )
 
     @reactive.Effect
+    @reactive.event(input.turbidity_estuary_name)
     def update_turbidity_slider_idx():
         number_of_image = get_number_of_turbidity_image()
         ui.update_slider(
@@ -261,7 +274,8 @@ def server_turbidity(input, output, session: Session):
             "geo_coordinates": {"lat": latitude, "lon": longitude}
         }
         save_json_data(
-            modified_turbidity_location_data, modified_turbidity_location_data_path
+            modified_turbidity_location_data,
+            f"../data/field_work/json/summer_2023/modified_location/{estuary_name}_location_t.json",
         )
 
     @reactive.Calc
@@ -297,36 +311,45 @@ def server_turbidity(input, output, session: Session):
         visualisation = None
         cmap = None
         vmin, vmax = None, None
-        if visualisation_mode in ["Image couleur", "NDWI_mask", "Index Turbidité"]:
+        if visualisation_mode in [
+            "Image couleur",
+            "water_index_mask",
+            "Index Turbidité",
+        ]:
             im = image_handler.true_color_image
-        elif visualisation_mode == "NDWI":
-            im = create_ndwi_raster(image_handler.green_band, image_handler.nir_band)
-        if visualisation_mode in ["NDWI_mask", "Index Turbidité"]:
-            ndwi_mask = (
-                create_ndwi_raster(image_handler.green_band, image_handler.nir_band)
-                > input.ndwi_mask_threshold()
+        elif visualisation_mode == "water_index":
+            im = create_water_index_raster(image_handler)
+        if visualisation_mode in ["water_index_mask", "Index Turbidité"]:
+            water_index_mask = (
+                create_water_index_raster(image_handler)
+                > input.water_index_mask_threshold()
             )
-            if input.turbidity_exclude_bridge_points_switch():
-                ndwi_mask = (
-                    ndwi_mask * image_handler.get_mask_from_bridge_points_handler()
-                )
-            alpha = ndwi_mask.astype(float)
+            # Clean Water Mask from bridge
+            water_index_mask = (
+                water_index_mask * image_handler.get_mask_from_bridge_points_handler()
+            )
+            alpha = water_index_mask.astype(float)
             if visualisation_mode == "Index Turbidité":
-                smoothed_ndti_ndwi_mask = get_smoothed_turbidity_index_ndwi_mask(
-                    image_handler,
-                    input.ndwi_mask_threshold(),
-                    input.ndti_smoothed_sigma(),
-                    input.type_of_turbidity_index(),
-                    input.turbidity_exclude_bridge_points_switch(),
+                smoothed_ndti_water_index_mask = (
+                    get_smoothed_turbidity_index_water_index_mask(
+                        image_handler,
+                        input.water_index_mask_threshold(),
+                        input.ndti_smoothed_sigma(),
+                        input.type_of_turbidity_index(),
+                        True,
+                    )
                 )
                 if input.type_of_turbidity_index() == "NDTI":
                     vmin, vmax = -0.05, 0.05
                 else:
-                    vmin, vmax = 1_000, 1_700
+                    if input.turbidity_atmoshperic_correction() == "Sen2Cor":
+                        vmin, vmax = 1_000, 1_700
+                    elif input.turbidity_atmoshperic_correction() == "Acolite":
+                        vmin, vmax = 0.01, 0.08
             visualisation = (
-                smoothed_ndti_ndwi_mask
+                smoothed_ndti_water_index_mask
                 if visualisation_mode == "Index Turbidité"
-                else ndwi_mask
+                else water_index_mask
             )
             cmap = "Reds" if visualisation_mode == "Index Turbidité" else "Blues"
 
@@ -380,6 +403,7 @@ def server_turbidity(input, output, session: Session):
     @render.plot
     def generate_estuary_turbidity_plot():
         turbidity_df = generate_turbidity_df()
+        turbidity_df.to_pickle("ze_test.pkl")
         image_spot = input.turbidity_precise_location()
         fig, ax = plt.subplots(1, 1, frameon=False)
         color_mapping_estuaries = {
@@ -390,13 +414,14 @@ def server_turbidity(input, output, session: Session):
                 "2023-08-04": "green",
             },
             "cocagne": {
+                "2023-05-11": "red",
                 "2023-07-20": "blue",
                 "2023-07-25": "orange",
                 "2023-08-04": "green",
             },
             "dunk": {"2023-06-12": "blue", "2023-08-01": "orange"},
             "west": {"2023-08-01": "blue"},
-            "morell": {"2023-07-24": "blue"},
+            "morell": {"2023-05-10": "orange", "2023-07-24": "blue"},
         }
         estuary_name = input.turbidity_estuary_name().lower()
         color_estuary_mapping = color_mapping_estuaries[estuary_name]

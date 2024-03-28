@@ -1,4 +1,5 @@
 import lzma
+from datetime import datetime
 import pickle
 import re
 import json
@@ -50,3 +51,37 @@ def delete_bridge_precise_depth_string(string):
     bridge_suffix_pattern = r"( surface| bottom)$"
     result = re.sub(bridge_suffix_pattern, "", string)
     return result
+
+
+def get_turbidity_geo_coordinates_from_path(path):
+    geo_coordinates = load_json_data(path)
+    turbidity_geo_coordinates = geo_coordinates["turbidity_probe"]["geo_coordinates"]
+    return turbidity_geo_coordinates
+
+
+def convert_string_date_to_datetime_2023(date_string: str) -> datetime:
+    """
+    Convert a String of 16 or 19 caracters to datetime
+    String must be in format of "%Y-%d-%m %H:%M" or "%Y-%d-%m %H:%M:%S"
+    """
+    if len(date_string) == 16:
+        date = datetime.strptime(date_string, "%Y-%d-%m %H:%M")
+    elif len(date_string) == 19:
+        date = datetime.strptime(date_string, "%Y-%d-%m %H:%M:%S")
+    else:
+        raise ValueError
+    return date
+
+
+def convert_string_date_to_datetime_2022(date_string: str) -> datetime:
+    """
+    Convert a String of 16 or 19 caracters to datetime
+    String must be in format of "%Y-%d-%m %H:%M" or "%Y-%d-%m %H:%M:%S"
+    """
+    if len(date_string) == 16:
+        date = datetime.strptime(date_string, "%Y-%m-%d %H:%M")
+    elif len(date_string) == 19:
+        date = datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
+    else:
+        raise ValueError
+    return date
