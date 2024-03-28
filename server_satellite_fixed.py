@@ -5,28 +5,34 @@ import pandas
 from shiny import render, reactive, Session
 
 
-ESTUARY_NAME_LIST = ["Bouctouche", "Cocagne", "Dunk", "Morell", "West"]
+ESTUARY_NAME_LIST_DICT = {
+    "2022": ["Bouctouche", "Cocagne", "Dunk"],
+    "2023": ["Bouctouche", "Cocagne", "Dunk", "Morell", "West"],
+    "2022/2023": ["Bouctouche", "Cocagne", "Dunk"],
+}
+
 ORDER_COLS = [
-    # "location",
-    # "exclude_points_from_bridge",
-    "atmospheric_correction",
     "ndwi_threshold",
+    "atmospheric_correction",
     "box_size",
     "ndti_smoothed_sigma",
     "type_of_turbidity_index",
     "y_name",
+    "turbidity_df_window",
     "r2",
     "pvalue",
     "pct_of_obs_use",
     "slope",
     "number_of_obs",
     "number_of_valid_obs",
+    "number_of_valid_obs_without_outlier",
 ]
 
 
-def load_result_df(estuary_name):
+def load_result_df(estuary_name, year):
+    year = year.replace("/", "-")
     result_df = pandas.read_feather(
-        f"data/result_turbidity_ponctuelle_ac/{estuary_name}_result.feather"
+        f"data/result_turbidity_fixed_ac/{year}/{estuary_name}_estuary_result.feather"
     )
     result_df["pct_of_obs_use"] = (
         result_df["number_of_valid_obs"] / result_df["number_of_obs"]
@@ -37,49 +43,51 @@ def load_result_df(estuary_name):
     return result_df
 
 
-def server_satellite_situ(input, output, session: Session):
+def server_satellite_fixed(input, output, session: Session):
     @reactive.Calc
     def load_result_dict():
+        year = input.satellite_fixed_year()
+        estuary_name_list = ESTUARY_NAME_LIST_DICT[year]
         result_dict = {}
-        for estuary_name in ESTUARY_NAME_LIST:
+        for estuary_name in estuary_name_list:
             estuary_name = estuary_name.lower()
-            result_df = load_result_df(estuary_name)
-            if input.satellite_situ_all_obs_switch() is True:
+            result_df = load_result_df(estuary_name, year)
+            if input.satellite_fixed_all_obs_switch() is True:
                 result_df = result_df[result_df["pct_of_obs_use"] == 1].reset_index(
                     drop=True
                 )
-            if input.satellite_situ_atmospheric_correctin() == "Sen2Cor":
-                result_df = result_df[
-                    result_df["atmospheric_correction"] == "Sen2Cor"
-                ].reset_index(drop=True)
-            if input.satellite_situ_atmospheric_correctin() == "Acolite":
+            if input.satellite_fixed_atmospheric_correctin() == "Acolite":
                 result_df = result_df[
                     result_df["atmospheric_correction"] == "Acolite"
                 ].reset_index(drop=True)
-            # if input.satellite_situ_exclude_points_from_bridge_switch() is True:
-            #     result_df = result_df[
-            #         result_df["exclude_points_from_bridge"]
-            #     ].reset_index(drop=True)
+            if input.satellite_fixed_atmospheric_correctin() == "Sen2Cor":
+                result_df = result_df[
+                    result_df["atmospheric_correction"] == "Sen2Cor"
+                ].reset_index(drop=True)
+            if input.satellite_fixed_only_positive_slope() is True:
+                result_df = result_df[result_df["slope"] > 0].reset_index(drop=True)
+
             result_dict[estuary_name] = result_df
         return result_dict
 
     @reactive.Calc
     def load_corresponding_result_df():
         result_dict = load_result_dict()
-        estuary_name = input.satellite_situ_estuary_name()
+        estuary_name = input.satellite_fixed_estuary_name()
         result_df = result_dict[estuary_name.lower()]
         return result_df
 
     @output
     @render.data_frame
-    def output_result_df():
+    def output_fixed_result_df():
         result_df = load_corresponding_result_df()
         result_df = result_df[ORDER_COLS]
         return render.DataGrid(result_df, row_selection_mode="single")
 
     @reactive.Calc
     def load_all_estuary_corresponding_df():
-        selected_idx = input.output_result_df_selected_rows()
+        estuary_name_list = ESTUARY_NAME_LIST_DICT[input.satellite_fixed_year()]
+        selected_idx = input.output_fixed_result_df_selected_rows()
         if len(selected_idx) == 0:
             return None
         else:
@@ -88,7 +96,7 @@ def server_satellite_situ(input, output, session: Session):
             result_dict = load_result_dict()
             selected_row = result_df.iloc[selected_idx]
             corresponding_df_list = []
-            for estuary_name in ESTUARY_NAME_LIST:
+            for estuary_name in estuary_name_list:
                 estuary_df = result_dict[estuary_name.lower()]
                 max_r2 = estuary_df["r2"].max()
                 estuary_df = estuary_df[
@@ -97,6 +105,10 @@ def server_satellite_situ(input, output, session: Session):
                     & (
                         estuary_df["ndti_smoothed_sigma"]
                         == selected_row["ndti_smoothed_sigma"]
+                    )
+                    & (
+                        estuary_df["turbidity_df_window"]
+                        == selected_row["turbidity_df_window"]
                     )
                     & (
                         estuary_df["type_of_turbidity_index"]
@@ -113,7 +125,7 @@ def server_satellite_situ(input, output, session: Session):
 
     @output
     @render.data_frame
-    def output_correspond_selected_row_result_df():
+    def output_correspond_selected_row_fixed_result_df():
         corresponding_df = load_all_estuary_corresponding_df()
         if corresponding_df is not None:
             new_order_cols = ORDER_COLS.copy()
@@ -125,8 +137,10 @@ def server_satellite_situ(input, output, session: Session):
 
     @output
     @render.plot
-    def output_correspond_selected_row_plot():
-        selected_idx = input.output_correspond_selected_row_result_df_selected_rows()
+    def output_correspond_selected_row_fixed_plot():
+        selected_idx = (
+            input.output_correspond_selected_row_fixed_result_df_selected_rows()
+        )
         if len(selected_idx) == 0:
             pass
         else:
@@ -134,12 +148,15 @@ def server_satellite_situ(input, output, session: Session):
             result_df = load_all_estuary_corresponding_df()
             selected_row = result_df.iloc[selected_idx]
             fig, ax = plt.subplots(1, 1, figsize=(10, 7))
-            ax.scatter(selected_row["data_dict"]["x"], selected_row["data_dict"]["y"])
-            x_min, x_max = (
-                selected_row["data_dict"]["x"].min(),
-                selected_row["data_dict"]["x"].max(),
+            ax.scatter(
+                selected_row["data_dict"]["x_without_outlier"],
+                selected_row["data_dict"]["y_without_outlier"],
             )
-            y_max = selected_row["data_dict"]["y"].max()
+            x_min, x_max = (
+                selected_row["data_dict"]["x_without_outlier"].min(),
+                selected_row["data_dict"]["x_without_outlier"].max(),
+            )
+            y_max = selected_row["data_dict"]["y_without_outlier"].max()
             x = numpy.linspace(start=x_min, stop=x_max, num=10)
             # reg = linregress(selected_row["data_dict"]["x"], selected_row["data_dict"]["y"])
             ax.plot(x, selected_row["intercept"] + selected_row["slope"] * x)
@@ -158,7 +175,7 @@ def server_satellite_situ(input, output, session: Session):
 
     @output
     @render.plot
-    def output_hyperparameters_diagnostics():
+    def output_fixed_hyperparameters_diagnostics():
         result_df = load_corresponding_result_df().copy()
         result_df["ndwi_threshold"] = result_df["ndwi_threshold"].apply(
             lambda x: numpy.round(x, 2)
@@ -173,11 +190,11 @@ def server_satellite_situ(input, output, session: Session):
         for col, ax in zip(
             [
                 "atmospheric_correction",
-                "ndwi_threshold",
                 "box_size",
                 "ndti_smoothed_sigma",
                 "type_of_turbidity_index",
                 "y_name",
+                "turbidity_df_window",
             ],
             axs.flatten(),
         ):

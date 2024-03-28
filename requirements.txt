@@ -2,6 +2,7 @@ astropy==5.3.3
 git+https://github.com/philbl/satellite-image-handler.git@main
 matplotlib==3.7.1
 numpy==1.26.0
+outlier-utils==0.0.5
 pandas==2.1.0
 pyarrow==14.0.2
 scikit-image==0.20.0
